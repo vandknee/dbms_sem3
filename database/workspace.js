@@ -50,7 +50,13 @@ function readComponents() {
       components.push({name:cursor[1],type:'cursor',procedure:procedure[1],iterates:cursor[2].trim(),description:'Cursor declared inside '+procedure[1]+' and iterating over its station history query.',sql:cursor[0].trim()});
     }
   }
-  return components;
+  const visible = new Set([
+    'river_summary','flagged_stations','missing_records','observation_gaps',
+    'reading_status','save_previous_reading','require_observation_evidence',
+    'quality_details'
+  ]);
+  return components.filter(component => visible.has(component.name) ||
+    (component.type === 'cursor' && component.name === 'history_rows' && component.procedure === 'observation_gaps'));
 }
 function problem(status, message) {
   return Object.assign(new Error(message), {status});
