@@ -41,10 +41,29 @@ async function workspace(req, url) {
       try { const result = (await pool.query(sql))[0]; logQuery({sql,params:[],operation:'SELECT',status:'SUCCESS',rows:result.length,duration:Date.now()-started}); return result; }
       catch (error) { logQuery({sql,params:[],operation:'SELECT',status:'ERROR',error:error.message,duration:Date.now()-started}); throw error; }
     }
+    if (entity === 'dashboard_stats') {
+      const rowsSql = fs.readFileSync(__dirname + '/dashboard.sql','utf8');
+      const statsSql = `select count(*) as total_stations
+from monitoring_station s
+join river r on r.id = s.river_id
+where ? = '' or r.id = ?`;
+      const river = query.get('river') || '';
+      const yearParams = [query.get('year'),river,river];
+      const [rows] = await executeLogged(pool,rowsSql,yearParams,'SELECT');
+      const [stats] = await executeLogged(pool,statsSql,[river,river],'SELECT');
+      return {
+        total_stations: stats[0]?.total_stations || 0,
+        reported_stations: rows.filter(row => row.status !== 'Missing').length,
+        missing_stations: rows.filter(row => row.status === 'Missing').length,
+        flagged_stations: rows.filter(row => row.status === 'Flagged').length
+      };
+    }
     if (entity === 'dashboard') {
       const sql = fs.readFileSync(__dirname + '/dashboard.sql','utf8');
       const river = query.get('river') || '';
-      return executeLogged(pool,sql,[query.get('year'),river,river],'SELECT');
+      const params = [query.get('year'),river,river];
+      const [rows] = await executeLogged(pool,sql,params,'SELECT');
+      return rows;
     }
     if (entity === 'station_gaps') {
       return (await executeLogged(pool,'call observation_gaps(?)',[id],'CALL'))[0];

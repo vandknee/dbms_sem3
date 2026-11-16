@@ -97,7 +97,7 @@ button.primary:hover, .ghost:hover, .small-button:hover { background: var(--hove
 .activity-panel .panel-heading { margin: 0; padding: 14px 15px; border-bottom: 1px solid var(--border); }
 .activity-panel h2 { font-size: 18px; }
 .activity-list { max-height: 310px; overflow: auto; }
-.activity-entry { display: grid; grid-template-columns: 85px 78px minmax(0, 1fr) 115px; gap: 12px; align-items: start; padding: 12px 15px; border-bottom: 1px solid #493d31; cursor: pointer; }
+.activity-entry { display: block; padding: 13px 15px; border-bottom: 1px solid #493d31; cursor: pointer; }
 .activity-time, .activity-meta { color: var(--muted); font: 12px var(--mono); }
 .activity-op { color: var(--accent); font: 600 13px var(--mono); }
 .activity-sql { min-width: 0; }
@@ -105,6 +105,8 @@ button.primary:hover, .ghost:hover, .small-button:hover { background: var(--hove
 .activity-sql small { display: block; margin-top: 4px; color: var(--secondary); font-size: 12px; }
 .activity-detail { display: none; grid-column: 1 / -1; padding: 10px 0 0; border-top: 1px solid var(--border); }
 .activity-entry.open .activity-detail { display: block; }
+.activity-query { max-height: 62px; overflow: hidden; margin: 0; color: var(--text); white-space: pre-wrap; font: 13px/1.6 var(--mono); }
+.activity-entry.open .activity-query { max-height: 360px; overflow: auto; }
 .activity-detail pre, .sql-preview pre { max-height: 210px; overflow: auto; margin: 5px 0; color: var(--text); white-space: pre-wrap; font: 13px/1.6 var(--mono); }
 .params { max-height: 120px; overflow: auto; color: var(--secondary); white-space: pre-wrap; font: 13px/1.55 var(--mono); }
 
