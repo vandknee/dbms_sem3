@@ -6,6 +6,52 @@ for (const section of fs.readFileSync(__dirname + '/reports.sql','utf8').split(/
   const end = section.indexOf('\n');
   reports.set(section.slice(0,end).trim(), section.slice(end).trim());
 }
+const componentDescriptions = {
+  check_parent: 'Checks a proposed tributary relationship for a cycle before it is stored.',
+  river_summary: 'Returns station and annual-record counts grouped by river.',
+  flagged_stations: 'Returns readings classified as flagged for a selected reporting year.',
+  missing_records: 'Returns monitoring stations without a quality record for a selected year.',
+  year_comparison: 'Compares selected-year readings with the previous year for each station.',
+  observation_gaps: 'Uses a cursor to find missing years in a station history.',
+  status_changes: 'Uses a cursor to find consecutive-year quality-status changes.',
+  flag_streak: 'Uses a cursor to calculate the longest consecutive flagged-reading streak.',
+  reading_status: 'Classifies a reading using the thresholds implemented in the project.',
+  quality_details: 'Joins quality records to station and river names and computes quality status.',
+  save_previous_reading: 'Stores the previous water-quality values in edit history before an update.',
+  validate_parent_insert: 'Checks a new tributary relationship before insertion.',
+  validate_parent_update: 'Checks an edited tributary relationship before update.',
+  require_observation_evidence: 'Rejects pollution observations without evidence and observation text.',
+  require_updated_evidence: 'Applies the same evidence requirement to pollution-record updates.'
+};
+function readComponents() {
+  const read = name => fs.readFileSync(__dirname + '/' + name,'utf8');
+  const components = [];
+  const addProcedures = source => {
+    for (const match of source.matchAll(/create procedure if not exists\s+([a-z0-9_]+)[\s\S]*?end\/\/?/gi)) {
+      const name = match[1];
+      components.push({name,type:'procedure',description:componentDescriptions[name] || 'Stored procedure defined in the project SQL.',sql:match[0].trim()});
+    }
+  };
+  addProcedures(read('procedures.sql'));
+  addProcedures(read('cursors.sql'));
+  const functionMatch = read('functions.sql').match(/create function if not exists\s+([a-z0-9_]+)[\s\S]*?end;/i);
+  if (functionMatch) components.push({name:functionMatch[1],type:'function',description:componentDescriptions[functionMatch[1]],sql:functionMatch[0].trim()});
+  const viewMatch = read('functions.sql').match(/create or replace view\s+([a-z0-9_]+)[\s\S]*?;/i);
+  if (viewMatch) components.push({name:viewMatch[1],type:'view',description:componentDescriptions[viewMatch[1]],sql:viewMatch[0].trim()});
+  const triggerSource = read('triggers.sql');
+  const triggerStarts = [...triggerSource.matchAll(/create trigger if not exists\s+([a-z0-9_]+)\s+(before|after)\s+(insert|update|delete)\s+on\s+([a-z0-9_]+)/gi)];
+  triggerStarts.forEach((match,index) => {
+    const raw = triggerSource.slice(match.index,triggerStarts[index+1]?.index ?? triggerSource.length).replace(/^delimiter\s+.*$/gim,'').trim();
+    components.push({name:match[1],type:'trigger',event:match[2].toUpperCase()+' '+match[3].toUpperCase(),table:match[4],description:componentDescriptions[match[1]],sql:raw});
+  });
+  const cursorSource = read('cursors.sql');
+  for (const procedure of cursorSource.matchAll(/create procedure if not exists\s+([a-z0-9_]+)[\s\S]*?end\/\/?/gi)) {
+    for (const cursor of procedure[0].matchAll(/declare\s+([a-z0-9_]+)\s+cursor\s+for\s+([\s\S]*?);/gi)) {
+      components.push({name:cursor[1],type:'cursor',procedure:procedure[1],iterates:cursor[2].trim(),description:'Cursor declared inside '+procedure[1]+' and iterating over its station history query.',sql:cursor[0].trim()});
+    }
+  }
+  return components;
+}
 function problem(status, message) {
   return Object.assign(new Error(message), {status});
 }
@@ -24,7 +70,7 @@ async function workspace(req, url) {
   if (req.method === 'GET') {
     if (entity === 'activity') return getActivity();
     if (entity === 'catalog') return {
-      fields,references,optional,reports:[...reports.keys()],
+      fields,references,optional,reports:[...reports.keys()],components:readComponents(),
       database: 'rivertrace_monitor',
       objects: {
         tables: Object.keys(fields),

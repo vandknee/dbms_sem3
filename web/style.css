@@ -119,5 +119,20 @@ dialog form { padding: 21px; }
 .sql-preview { margin-top: 17px; padding: 12px; border: 1px solid var(--border); background: #181411; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 17px; }
 
+.component-section { margin-bottom: 18px; border: 1px solid var(--border); border-radius: 3px; background: var(--panel); }
+.component-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 15px; border-bottom: 1px solid var(--border); }
+.component-section-heading h2 { margin: 0; font-size: 18px; }
+.component-section-heading span { color: var(--accent); font: 13px var(--mono); }
+.component-row { padding: 14px 15px; border-bottom: 1px solid var(--border); }
+.component-row:last-child { border-bottom: 0; }
+.component-summary { display: grid; grid-template-columns: minmax(190px, 1fr) minmax(220px, 1fr) auto; gap: 7px 15px; align-items: start; }
+.component-name { color: var(--text); font: 15px var(--mono); }
+.component-meta { color: var(--accent); font: 12px/1.5 var(--mono); text-transform: uppercase; }
+.component-description, .component-context { grid-column: 1 / -1; margin: 0; color: var(--secondary); font-size: 13px; line-height: 1.5; }
+.component-context { color: var(--muted); font: 12px/1.55 var(--mono); white-space: pre-wrap; }
+.component-sql { margin: 12px 0 0; padding: 12px; border: 1px solid var(--border); background: #181411; color: var(--text); white-space: pre-wrap; overflow: auto; font: 13px/1.55 var(--mono); }
+
+@media (max-width: 700px) { .component-summary { grid-template-columns: 1fr; } }
+
 @media (max-width: 1050px) { body { grid-template-columns: 250px minmax(0, 1fr); } .app-shell { padding: 22px; } .content-grid { grid-template-columns: 1fr; } }
 @media (max-width: 700px) { body { display: block; } .sidebar { min-height: auto; } .explorer { max-height: 240px; } .app-shell { padding: 15px; } .topbar { align-items: start; flex-direction: column; } .topbar h1 { font-size: 20px; } .stat-grid { grid-template-columns: repeat(2, 1fr); } .form-grid { grid-template-columns: 1fr; } .activity-entry { grid-template-columns: 70px 58px minmax(0, 1fr); } .activity-meta { display: none; } }
