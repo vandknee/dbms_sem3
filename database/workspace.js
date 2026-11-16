@@ -115,7 +115,7 @@ async function executeLogged(connection, sql, params, operation) {
   const started = Date.now();
   try {
     const result = await connection.execute(sql, params);
-    const rows = Array.isArray(result[0]) ? result[0] : result[0].affectedRows;
+    const rows = Array.isArray(result[0]) ? result[0].length : result[0].affectedRows;
     logQuery({sql,params,operation,status:'SUCCESS',rows,duration:Date.now()-started});
     return result;
   } catch (error) {
