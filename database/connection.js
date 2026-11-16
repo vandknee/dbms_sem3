@@ -11,6 +11,17 @@ const pool = mysql.createPool({
   connectionLimit: 8
 });
 
+const activity = [];
+function logQuery(entry) {
+  activity.unshift({
+    id: Date.now() + Math.random(),
+    at: new Date().toISOString(),
+    ...entry
+  });
+  if (activity.length > 80) activity.pop();
+}
+function getActivity() { return activity.slice(); }
+
 async function transaction(work) {
   const db = await pool.getConnection();
   try {
@@ -26,4 +37,4 @@ async function transaction(work) {
     db.release();
   }
 }
-module.exports = { pool, transaction };
+module.exports = { pool, transaction, logQuery, getActivity };

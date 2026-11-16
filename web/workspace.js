@@ -1,175 +1,29 @@
-const el = id => document.getElementById(id);
-function node(tag,text) {
-  const item = document.createElement(tag);
-  if (text != null) item.textContent = text;
-  return item;
-}
-function label(key) {
-  const units = {do:'DO (mg/L)',bod:'BOD (mg/L)',ph:'pH',fc:'FC (MPN/100 mL)'};
-  const [parameter,end] = key.split('_');
-  if (units[parameter]) return units[parameter] + ' ' + end;
-  return key.replaceAll('_',' ').replace(/^./,c => c.toUpperCase());
-}
-function button(text,action) {
-  const item = node('button',text);
-  item.type = 'button';
-  item.onclick = action;
-  return item;
-}
-async function request(path,method='GET',body) {
-  const res = await fetch('/db/'+path,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  const data = await res.json();
-  if (!res.ok) throw Error(data.error);
-  return data;
-}
-let catalog, section = 'overview', rows = [], choices = {}, generation = 0;
-function describe(row) {
-  if (row.station_name) return row.id+' · '+row.station_name+' ('+row.report_year+')';
-  if (row.name) return row.id+' · '+row.name;
-  if (row.longitude != null) return row.id+' · '+row.latitude+', '+row.longitude;
-  return String(row.id);
-}
-function choice_input(items,placeholder) {
-  const input = node('select');
-  input.append(new Option(placeholder,''));
-  for (const item of items) input.append(new Option(describe(item),item.id));
-  return input;
-}
-function field(parent,text,input) {
-  const wrap = node('label',text);
-  wrap.append(input);
-  parent.append(wrap);
-  return input;
-}
-async function open_section(name,success='') {
-  const version = ++generation;
-  section = name;
-  const controls = el('controls');
-  controls.replaceChildren();
-  el('results').replaceChildren();
-  el('heading').textContent = page_names[name] || label(name);
-  el('notice').textContent = 'Loading…';
-  for (const item of document.querySelectorAll('[data-key]')) item.setAttribute('aria-current',String(item.dataset.key === name));
-  try {
-    if (name === 'overview') {
-      await dashboard(version); return;
-    } else {
-      const params = new URLSearchParams();
-      const refs = new Set((catalog.fields[name] || []).map(key => catalog.references[key]).filter(Boolean));
-      if (name === 'water_quality_record') refs.add('river');
-      const entries = await Promise.all([...refs].map(async ref => [ref,await request(ref)]));
-      if (version !== generation) return;
-      choices = Object.fromEntries(entries);
-      let route = name;
-      if (name === 'reports') {
-        const selection = node('select');
-        catalog.reports.forEach(key => selection.append(new Option(label(key),key)));
-        field(controls,'Report',selection);
-        const year = field(controls,'Report year',node('input'));
-        year.type = 'number'; year.value = '2023';
-        const report = async () => show_rows('report/'+selection.value+'?year='+encodeURIComponent(year.value),version);
-        controls.append(button('Run report',report));
-        await report(); return;
-      }
-      if (name === 'water_quality_record') {
-        const term = field(controls,'Station or river',node('input'));
-        const year = field(controls,'Year',node('input'));
-        year.type = 'number'; year.placeholder = 'All years';
-        const river = field(controls,'River',choice_input(choices.river,'All rivers'));
-        controls.append(button('Apply filters',() => {
-          params.set('q',term.value); params.set('year',year.value); params.set('river',river.value);
-          show_rows(name+'?'+params,version);
-        }));
-      }
-      if (name === 'monitoring_station') {
-        const term = field(controls,'Station name or ID',node('input'));
-        controls.append(button('Search',() => show_rows(name+'?q='+encodeURIComponent(term.value),version)));
-      }
-      if (name !== 'river_segment') controls.append(button('Add '+label(name).toLowerCase(),() => edit(null)));
-      await show_rows(route,version,success); return;
-    }
-    el('notice').textContent = success;
-  } catch(error) { if (version === generation) el('notice').textContent = error.message; }
-}
-async function show_rows(route,version,success='') {
-  try {
-    const data = await request(route);
-    if (version !== generation) return;
-    rows = data;
-    const results = el('results'); results.replaceChildren();
-    el('notice').textContent = [success,rows.length ? rows.length+' rows' : 'No matching records.'].filter(Boolean).join(' · ');
-    if (!rows.length) return;
-    const editable = section !== 'reports' && section !== 'river_segment';
-    const columns = Object.keys(rows[0]).filter(key => key !== 'edit_history');
-    const table = node('table'), head = table.createTHead().insertRow();
-    for (const key of columns) head.append(node('th',label(key)));
-    if (editable) head.append(node('th','Actions'));
-    const body = table.createTBody();
-    for (const row of rows) {
-      const tr = body.insertRow();
-      for (const key of columns) {
-        const reference = choices[catalog.references[key]]?.find(item => String(item.id) === String(row[key]));
-        tr.insertCell().textContent = reference ? describe(reference) : row[key] ?? '—';
-      }
-      if (editable) {
-        const actions = tr.insertCell();
-        if (section === 'monitoring_station') actions.append(button('Profile',() => station_profile(row.id,row.name)));
-        actions.append(button('Edit',() => edit(row)),button('Delete',() => remove(row)));
-        if (section === 'water_quality_record') actions.append(button('History',() => history_view(row)));
-      }
-    }
-    results.append(table);
-  } catch(error) { if (version === generation) el('notice').textContent = error.message; }
-}
-function history_view(row) {
-  const history = row.edit_history || [];
-  const detail = node('dialog'), title = node('h2','Edit history · '+describe(row));
-  detail.append(title,node('pre',history.length ? JSON.stringify(history,null,2) : 'No edits recorded.'),button('Close',()=>detail.close()));
-  detail.onclose = ()=>detail.remove(); document.body.append(detail); detail.showModal();
-}
-async function remove(row) {
-  const warning = section === 'water_quality_record' ? ' Its edit history and linked pollution observations will also be deleted.' : '';
-  if (!confirm('Delete '+describe(row)+'?'+warning)) return;
-  try { await request(section+'/'+encodeURIComponent(row.id),'DELETE'); await open_section(section,'Deleted.'); }
-  catch(error) { el('notice').textContent = error.message; }
-}
-function edit(row) {
-  const dialog = el('editor'), inputs = el('inputs'), form = el('form');
-  inputs.replaceChildren(); el('form_error').textContent = '';
-  el('form_title').textContent = (row ? 'Edit ' : 'Add ')+label(section).toLowerCase();
-  for (const key of catalog.fields[section]) {
-    if (row && key === 'id') continue;
-    const ref = catalog.references[key];
-    const input = ref ? choice_input(choices[ref],'Select…') : node('input');
-    if (key === 'measured_on') input.type = 'date';
-    input.name = key; input.value = row?.[key] ?? '';
-    input.required = !catalog.optional.includes(key);
-    field(inputs,label(key)+(input.required ? ' *' : ''),input);
-  }
-  form.onsubmit = async event => {
-    event.preventDefault();
-    const submit = form.querySelector('button'); submit.disabled = true;
-    try {
-      const path = row ? section+'/'+encodeURIComponent(row.id) : section;
-      await request(path,row ? 'PUT' : 'POST',Object.fromEntries(new FormData(form)));
-      dialog.close(); await open_section(section,'Saved.');
-    } catch(error) { el('form_error').textContent = error.message; }
-    finally { submit.disabled = false; }
-  };
-  dialog.showModal();
-}
-el('cancel').onclick = () => el('editor').close();
-request('catalog').then(result => {
-  catalog = result;
-  const main_pages = Object.keys(page_names);
-  for (const key of [...main_pages,...Object.keys(result.fields).filter(key => !main_pages.includes(key))]) {
-    const item = button(page_names[key] || label(key), () => open_section(key));
-    item.dataset.key = key;
-    el(main_pages.includes(key) ? 'sections' : 'tables').append(item);
-  }
-  el('add_record').onclick = async () => {
-    await open_section('water_quality_record');
-    if (section === 'water_quality_record' && choices.monitoring_station) edit(null);
-  };
-  open_section('overview');
-}).catch(error => { el('notice').textContent = error.message; });
+const $=id=>document.getElementById(id), make=(tag,text)=>{const n=document.createElement(tag);if(text!=null)n.textContent=text;return n};
+const state={catalog:null,section:'overview',choices:{},generation:0};
+const pageNames={overview:'Overview',monitoring_station:'Monitoring stations',water_quality_record:'Water-quality records',reports:'Reports'};
+const pretty=k=>k.replaceAll('_',' ').replace(/^./,c=>c.toUpperCase());
+const colName=k=>({do_min:'DO min',do_max:'DO max',bod_min:'BOD min',bod_max:'BOD max',ph_min:'pH min',ph_max:'pH max',fc_min:'FC min',fc_max:'FC max'}[k]||pretty(k));
+function btn(text,fn,cls='small-button'){const b=make('button',text);b.type='button';b.className=cls;b.onclick=fn;return b}
+async function request(path,method='GET',body){const r=await fetch('/db/'+path,{method,headers:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});const d=await r.json();if(!r.ok)throw Error(d.error||'Request failed');return d}
+function paramsText(p){return p?.length?p.map((x,i)=>(i+1)+': '+JSON.stringify(x)).join('\n'):'No bound parameters'}
+function notice(text,kind=''){const n=$('notice');n.textContent=text;n.className='notice '+kind}
+async function activity(){try{const list=await request('activity'),host=$('activity');host.replaceChildren();if(!list.length){const e=make('div','No database operations recorded in this session.');e.className='empty';host.append(e);return}list.slice(0,30).forEach(a=>{const row=make('div');row.className='activity-entry';const time=new Date(a.at).toLocaleTimeString();row.append(make('div',time),make('div',a.operation||'SQL'));row.children[0].className='activity-time';row.children[1].className='activity-op '+(a.status==='ERROR'?'ERROR':'');const center=make('div'),code=make('code',(a.sql||'').replace(/\s+/g,' ').trim()),small=make('small',(a.status==='SUCCESS'?'SUCCESS':'ERROR')+' · '+(a.rows??0)+' rows · '+a.duration+' ms');center.className='activity-sql';center.append(code,small);row.append(center);const meta=make('div',a.status==='SUCCESS'?'✓ '+(a.rows??0)+' rows':'✕ failed');meta.className='activity-meta';row.append(meta);const detail=make('div');detail.className='activity-detail';detail.append(make('pre',a.sql),make('div','Parameters\n'+paramsText(a.params)));row.append(detail);row.onclick=()=>row.classList.toggle('open');host.append(row)})}catch{}}
+function addField(parent,name,input,required=true){const l=make('label');l.append(make('span',colName(name)+(required?' *':'')),input);parent.append(l);return input}
+function choices(items,placeholder='Select…'){const s=make('select');s.append(new Option(placeholder,''));(items||[]).forEach(x=>s.append(new Option(x.name?x.id+' · '+x.name:String(x.id),x.id)));return s}
+function buildExplorer(){const host=$('explorer'),groups=[['Core views',['overview']],['Tables',state.catalog.objects.tables],['Views',state.catalog.objects.views],['Stored procedures',state.catalog.objects.procedures],['Functions',state.catalog.objects.functions],['Triggers',state.catalog.objects.triggers],['Reports',state.catalog.reports]];groups.forEach(([title,items])=>{const d=make('details');d.className='tree-group';d.open=title==='Core views'||title==='Tables';const sum=make('summary',title+'  '+items.length);d.append(sum);items.forEach(name=>{const b=btn('',()=>openSection(name),'tree-item');b.dataset.key=name;const icon=make('span',title==='Tables'?'▦':title==='Reports'?'▤':'◈');icon.className='object-icon';b.append(icon,make('span',pageNames[name]||pretty(name)));d.append(b)});host.append(d)})}
+function setActive(name){document.querySelectorAll('[data-key]').forEach(x=>x.classList.toggle('active',x.dataset.key===name))}
+async function loadChoices(entity){const refs=new Set((state.catalog.fields[entity]||[]).map(k=>state.catalog.references[k]).filter(Boolean));if(entity==='water_quality_record')refs.add('river');state.choices=Object.fromEntries(await Promise.all([...refs].map(async r=>[r,await request(r)])))}
+async function openSection(name,success=''){const version=++state.generation;state.section=name;setActive(name);$('heading').textContent=pageNames[name]||pretty(name);$('controls').replaceChildren();$('results').replaceChildren();notice('Loading…');if(name==='overview'){await dashboard(version);return}if(state.catalog.fields[name]){await loadChoices(name);if(name==='reports'){reportControls(version);return}controls(name,version);await rows(name,version,success);return}objectInfo(name)}
+function controls(name,version){const c=$('controls');if(name==='monitoring_station'){const q=make('input');q.placeholder='station name or ID';addField(c,'Search',q,false);c.append(btn('Search',()=>rows(name,version,'','q='+encodeURIComponent(q.value)),'primary'))}if(name==='water_quality_record'){const q=make('input'),y=make('input'),r=choices(state.choices.river,'all rivers');q.placeholder='station or river';y.type='number';y.placeholder='all years';addField(c,'Search',q,false);addField(c,'Year',y,false);addField(c,'River',r,false);c.append(btn('Apply filters',()=>rows(name,version,'','q='+encodeURIComponent(q.value)+'&year='+encodeURIComponent(y.value)+'&river='+encodeURIComponent(r.value)),'primary'))}if(name!=='river_segment')c.append(btn('＋ New '+pretty(name).toLowerCase(),()=>edit(null),'primary'))}
+async function rows(entity,version,success='',query=''){try{const data=await request(entity+(query?'?'+query:''));if(version!==state.generation)return;notice([success,data.length?data.length+' rows returned':'No matching rows'].filter(Boolean).join(' · '),success?'success':'');renderTable($('results'),data,entity,true)}catch(e){if(version===state.generation)notice(e.message,'error')}await activity()}
+function renderTable(host,data,entity,editable){const panel=make('section');panel.className='grid-panel';const heading=make('div');heading.className='panel-heading';heading.append(make('h2',entity==='reports'?'Report result':'Result grid'),make('span',data.length+' rows'));panel.append(heading);if(!data.length){const e=make('div','No records returned.');e.className='empty';panel.append(e);host.append(panel);return}const wrap=make('div');wrap.className='data-wrap';const table=make('table');table.className='data-grid';const keys=Object.keys(data[0]).filter(k=>k!=='edit_history'),hr=table.createTHead().insertRow();keys.forEach(k=>hr.append(make('th',colName(k))));const canEdit=editable&&state.catalog.fields[entity]&&entity!=='river_segment';if(canEdit)hr.append(make('th','Actions'));const body=table.createTBody();data.forEach(row=>{const tr=body.insertRow();keys.forEach(k=>{const td=tr.insertCell(),ref=state.choices[state.catalog.references[k]]?.find(x=>String(x.id)===String(row[k]));td.textContent=ref?ref.id+' · '+(ref.name||''):row[k]==null?'NULL':String(row[k]);if(row[k]==null)td.className='null';if(['id','station_id','report_year'].includes(k))td.classList.add('mono')});if(canEdit){const td=tr.insertCell();td.className='actions';td.append(btn('Edit',()=>edit(row)),btn('Delete',()=>remove(row),'small-button danger'));if(entity==='monitoring_station')td.append(btn('Profile',()=>profile(row.id,row.name)));if(entity==='water_quality_record')td.append(btn('History',()=>history(row)))}});wrap.append(table);panel.append(wrap);host.append(panel)}
+async function dashboard(version){const c=$('controls'),r=make('select'),ys=await request('years'),rivers=await request('river');r.append(new Option('All rivers',''));rivers.forEach(x=>r.append(new Option(x.name,x.id)));const y=make('input');y.type='number';y.value=ys[0]?.report_year||2023;addField(c,'River',r,false);addField(c,'Reporting year',y,false);const refresh=async()=>{const data=await request('dashboard?'+new URLSearchParams({river:r.value,year:y.value}));if(version!==state.generation)return;const flagged=data.filter(x=>x.status==='Flagged').length,missing=data.filter(x=>x.status==='Missing').length;const stats=make('div');stats.className='stat-grid';[['Monitoring stations',data.length,'database rows'],['Reported',data.length-missing,'annual records'],['Flagged readings',flagged,'needs review'],['Missing records',missing,'data gaps']].forEach(([a,b,d])=>{const card=make('article');card.className='stat-card';card.append(make('small',a),make('strong',String(b)),make('em',d));stats.append(card)});const grid=make('div');grid.className='content-grid';const left=make('section');left.className='grid-panel';const rows=data.map(x=>({station:x.station_name,river:x.river_name,do_min:x.do_min,bod_max:x.bod_max,status:x.status}));renderTable(left,rows,'overview',false);const right=make('section');right.className='panel';right.append(make('h2','Attention queue'));[[flagged,'Flagged readings'],[missing,'Missing records']].forEach(([n,t])=>{const a=make('div',n+' '+t);a.className='attention';right.append(a)});grid.append(left,right);$('results').replaceChildren(stats,grid);await activity()};r.onchange=refresh;y.onchange=refresh;await refresh()}
+function reportControls(version){const c=$('controls'),s=make('select'),y=make('input');state.catalog.reports.forEach(x=>s.append(new Option(pretty(x),x)));y.type='number';y.value=2023;addField(c,'Report',s,false);addField(c,'Year',y,false);const run=()=>rows('report/'+s.value,version,'','year='+encodeURIComponent(y.value));c.append(btn('Run report',run,'primary'));run()}
+function objectInfo(name){$('results').replaceChildren();const p=make('section');p.className='panel';p.append(make('h2',pretty(name)),make('p','This database object is implemented in the RiverTrace SQL files. Use tables and reports to inspect live results; every operation appears in the SQL activity trace below.'));$('results').append(p);notice('Object metadata loaded')}
+function preview(entity,keys,values,row){const p=keys.map(k=>values[k]??null);return row?{sql:'update '+entity+' set '+keys.map(k=>k+'=?').join(', ')+' where id=?',params:[...p,row.id]}:{sql:'insert into '+entity+' ('+keys.join(', ')+') values ('+keys.map(()=>'?').join(', ')+')',params:p}}
+function edit(row){const d=$('editor'),form=$('form'),box=$('inputs'),keys=state.catalog.fields[state.section].filter(k=>!(row&&k==='id'));box.replaceChildren();$('form_title').textContent=(row?'Edit ':'New ')+pretty(state.section);$('form_error').textContent='';keys.forEach(k=>{const input=state.catalog.references[k]?choices(state.choices[state.catalog.references[k]]):make('input');if(k==='measured_on')input.type='date';input.name=k;input.value=row?.[k]??'';input.required=!state.catalog.optional.includes(k);input.oninput=update;addField(box,k,input,input.required)});function update(){const x=preview(state.section,keys,Object.fromEntries(new FormData(form)),row);$('form_sql').textContent=x.sql;$('form_params').textContent='Parameters\n'+paramsText(x.params)}form.onsubmit=async e=>{e.preventDefault();const values=Object.fromEntries(new FormData(form)),submit=form.querySelector('.primary');submit.disabled=true;try{await request(state.section+(row?'/'+encodeURIComponent(row.id):''),row?'PUT':'POST',values);d.close();await openSection(state.section,'Operation completed')}catch(err){$('form_error').textContent=err.message}finally{submit.disabled=false}};d.showModal();update()}
+async function remove(row){if(!confirm('Delete '+(row.name||row.id)+'? This executes a parameterized DELETE.'))return;try{await request(state.section+'/'+encodeURIComponent(row.id),'DELETE');await openSection(state.section,'Record deleted')}catch(e){notice(e.message,'error')}await activity()}
+function history(row){const d=document.createElement('dialog'),f=make('form');f.append(make('h2','Edit history'),make('pre',JSON.stringify(row.edit_history||[],null,2)),btn('Close',()=>d.close(),'ghost'));d.append(f);document.body.append(d);d.showModal();d.onclose=()=>d.remove()}
+async function profile(id,name){const d=document.createElement('dialog'),f=make('form');f.append(make('h2',name+' · '+id));const data=await request('water_quality_record?station='+encodeURIComponent(id));renderTable(f,data,'water_quality_record',false);f.append(btn('Close',()=>d.close(),'ghost'));d.append(f);document.body.append(d);d.showModal();d.onclose=()=>d.remove();await activity()}
+$('cancel').onclick=$('cancel_bottom').onclick=()=>$('editor').close();$('clear_activity').onclick=()=>{const e=make('div','Activity view cleared.');e.className='empty';$('activity').replaceChildren(e)};$('refresh_catalog').onclick=()=>location.reload();
+request('catalog').then(c=>{state.catalog=c;buildExplorer();$('add_record').onclick=()=>{state.section='water_quality_record';loadChoices('water_quality_record').then(()=>edit(null))};openSection('overview')}).catch(e=>notice(e.message,'error'));activity();
