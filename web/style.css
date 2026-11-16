@@ -92,6 +92,8 @@ button.primary:hover, .ghost:hover, .small-button:hover { background: var(--hove
 .danger { color: #cfb9a0; }
 .attention { margin: 10px 0; padding: 12px; border: 1px solid var(--border); border-radius: 3px; color: var(--secondary); font-size: 13px; }
 .empty { padding: 32px; color: var(--muted); text-align: center; font-size: 13px; }
+.empty-grid { padding-bottom: 12px; }
+.empty-grid .empty { padding: 17px 0 5px; text-align: left; }
 
 .activity-panel { margin-top: 18px; border: 1px solid var(--border); border-radius: 3px; background: #1b1714; }
 .activity-panel .panel-heading { margin: 0; padding: 14px 15px; border-bottom: 1px solid var(--border); }

@@ -70,7 +70,7 @@ async function workspace(req, url) {
   if (req.method === 'GET') {
     if (entity === 'activity') return getActivity();
     if (entity === 'catalog') return {
-      fields,references,optional,reports:[...reports.keys()],components:readComponents(),
+      fields,references,optional,components:readComponents(),
       database: 'rivertrace_monitor',
       objects: {
         tables: Object.keys(fields),
