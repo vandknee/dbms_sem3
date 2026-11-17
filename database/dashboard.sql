@@ -6,3 +6,5 @@ join river r on r.id = s.river_id
 left join quality_details q on q.station_id = s.id and q.report_year = ?
 where ? = '' or r.id = ?
 order by r.name, s.name
+
+--joins the tables and shows all the relevant data, also replacing null with missing

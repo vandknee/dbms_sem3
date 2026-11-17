@@ -1,5 +1,6 @@
 delimiter //
 
+--this procedure finds the missing values in the table 
 create procedure if not exists observation_gaps(in selected_station varchar(32))
 begin
   declare finished boolean default false;
@@ -7,6 +8,9 @@ begin
   declare current_status varchar(20);
   
   declare result json default (json_array());
+
+  --cursor for reading the stations records in ascending order 
+  -- procedure mainly identifies the gap, and arks those misisng values as MISSING; does not add a value to them 
   declare history_rows cursor for
     select report_year, quality_status from quality_details
     where station_id = selected_station order by report_year;
@@ -14,8 +18,10 @@ begin
 
   open history_rows;
   read_history: loop
+  --fetching the data 
     fetch history_rows into current_year, current_status;
     if finished then leave read_history; end if;
+    -- checks if previous year  + 1 = current record's year and adds the missing range automatically
     if previous_year is not null and current_year > previous_year + 1 then
       set result = json_array_append(result, '$', json_object('first_missing',previous_year+1,'last_missing',current_year-1));
     end if;
@@ -25,6 +31,9 @@ begin
   select selected_station as station_id, result as gaps_between_records;
 end//
 
+
+
+--checks if the status of a river quality station is changing (flagged or not)
 create procedure if not exists status_changes(in selected_station varchar(32))
 begin
   declare finished boolean default false;
@@ -41,6 +50,8 @@ begin
   read_history: loop
     fetch history_rows into current_year, current_status;
     if finished then leave read_history; end if;
+    --checks if the previous year and current year are consecutive, and then checks if the status has been changed; if yes, then the station 
+    --is being marked as flagged
     if previous_year = current_year - 1 and previous_status <> current_status then
       set result = json_array_append(result, '$', json_object('year',current_year,'previous',previous_status,'current',current_status));
     end if;
@@ -51,6 +62,10 @@ begin
   select selected_station as station_id, result as consecutive_year_changes;
 end//
 
+
+
+
+--finds the longest number of years for which a station was flagged
 create procedure if not exists flag_streak(in selected_station varchar(32))
 begin
   declare finished boolean default false;
@@ -68,6 +83,9 @@ begin
   read_history: loop
     fetch history_rows into current_year, current_status;
     if finished then leave read_history; end if;
+
+    --checks if the current year immidiately follows the prev year, then only increase the count,
+    --or else start a new count from 0;
     if current_status = 'Flagged' then
       set streak = if(previous_year = current_year - 1, streak+1, 1);
       set longest = greatest(longest, streak);
@@ -80,3 +98,6 @@ begin
   select selected_station as station_id, longest as longest_flagged_streak;
 end//
 delimiter ;
+
+
+--using json for a structured format output

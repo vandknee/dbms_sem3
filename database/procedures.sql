@@ -1,5 +1,5 @@
 delimiter //
-
+--prevents circular tributaries (1-2-3-1)
 create procedure if not exists check_parent(in child int, in parent int)
 begin
   declare ancestor int default parent;
@@ -11,6 +11,8 @@ begin
   end while;
 end//
 
+
+--counts monitoring stations and annual water quality records from the data (normal count procedure)
 create procedure if not exists river_summary()
 begin
   select r.name as river, count(distinct s.id) as stations, count(q.id) as annual_records
@@ -19,12 +21,16 @@ left join water_quality_record q on q.station_id = s.id
 group by r.id, r.name order by r.name;
 end//
 
+
+--finds flagged stations for a particular year
 create procedure if not exists flagged_stations(in selected_year smallint)
 begin
   select station_id, station_name, river_name, report_year, do_min, bod_max, ph_min, ph_max, fc_max
 from quality_details where report_year = selected_year and quality_status = 'Flagged' order by river_name, station_name;
 end//
 
+
+--finds the stations with missing records
 create procedure if not exists missing_records(in selected_year smallint)
 begin
   select s.id, s.name, r.name as river
@@ -33,6 +39,7 @@ where not exists (select 1 from water_quality_record q where q.station_id = s.id
 order by r.name, s.name;
 end//
 
+--compares water quality with the previous year / calendar
 create procedure if not exists year_comparison(in selected_year smallint)
 begin
   select a.station_id, a.station_name, a.report_year, b.report_year as previous_year,

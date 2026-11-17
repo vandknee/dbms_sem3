@@ -1,6 +1,11 @@
+//this file connects node.js to backend to(sql), also manages databse transactions and keep a record of the sql activity
 const mysql = require('mysql2/promise');
 const fs = require('node:fs');
+
+//loading the env file
 if (fs.existsSync('.env')) process.loadEnvFile('.env');
+
+//creating the connection pool 
 const pool = mysql.createPool({
   host: process.env.DB_HOST || '127.0.0.1',
   port: Number(process.env.DB_PORT || 3306),
@@ -11,6 +16,8 @@ const pool = mysql.createPool({
   connectionLimit: 8
 });
 
+
+//for logging the activity 
 const activity = [];
 function logQuery(entry) {
   activity.unshift({
@@ -22,6 +29,8 @@ function logQuery(entry) {
 }
 function getActivity() { return activity.slice(); }
 
+
+//for performing the transactions 
 async function transaction(work) {
   const db = await pool.getConnection();
   try {

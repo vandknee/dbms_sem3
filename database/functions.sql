@@ -1,3 +1,7 @@
+
+--this function does not execute any sql statements; specified by nosql
+--used to check if any pollutant level exceeds and sees if the station is supposed to be flagged or not
+--also checks for incomplete or missing values
 create function if not exists reading_status(
   oxygen decimal(14,4), bod decimal(14,4), low_ph decimal(14,4),
   high_ph decimal(14,4), bacteria decimal(14,4)
@@ -8,6 +12,10 @@ return case
   else 'Within limits'
 end;
 
+
+--view: sql query that behaves like a virtual table
+--function is called inside this view
+--returns a result set instead of any values
 create or replace view quality_details as
 select q.*, s.name as station_name, r.id as river_id, r.name as river_name,
   reading_status(do_min, bod_max, ph_min, ph_max, fc_max) as quality_status
